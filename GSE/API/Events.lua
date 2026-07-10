@@ -150,16 +150,26 @@ function GSE:ADDON_LOADED(event, addon)
 
   for k,v in pairs(GSELibrary[GSE.GetCurrentClassID()]) do
     counter = counter + 1
-    for i,j in ipairs(v.MacroVersions) do
-      GSELibrary[GSE.GetCurrentClassID()][k].MacroVersions[tonumber(i)] = GSE.UnEscapeSequence(j)
+    if v and v.MacroVersions then
+      GSE.GetOrCreateInternalMacroName(k, v, GSE.GetCurrentClassID())
+      for i,j in ipairs(v.MacroVersions) do
+        GSELibrary[GSE.GetCurrentClassID()][k].MacroVersions[tonumber(i)] = GSE.UnEscapeSequence(j)
+      end
+    else
+      GSE.PrintDebugMessage('Skipping invalid sequence during startup: ' .. tostring(k), 'Events')
     end
   end
   if not GSE.isEmpty(GSELibrary[0]) then
 
     for k,v in pairs(GSELibrary[0]) do
       counter = counter + 1
-      for i,j in ipairs(v.MacroVersions) do
-        GSELibrary[0][k].MacroVersions[tonumber(i)] = GSE.UnEscapeSequence(j)
+      if v and v.MacroVersions then
+        GSE.GetOrCreateInternalMacroName(k, v, 0)
+        for i,j in ipairs(v.MacroVersions) do
+          GSELibrary[0][k].MacroVersions[tonumber(i)] = GSE.UnEscapeSequence(j)
+        end
+      else
+        GSE.PrintDebugMessage('Skipping invalid global sequence during startup: ' .. tostring(k), 'Events')
       end
     end
   end
@@ -442,7 +452,7 @@ function GSE:ProcessOOCQueue()
             GSELibrary[v.classid][v.sequencename] = v.sequence
           end
           if not GSE.isEmpty(v.sequence) and not GSE.isEmpty(v.sequence.MacroVersions) then
-            GSE.OOCUpdateSequence(v.sequencename, v.sequence.MacroVersions[GSE.GetActiveSequenceVersion(v.sequencename)])
+            GSE.OOCUpdateSequence(GSE.GetInternalMacroName(v.sequencename, v.sequence, v.classid), v.sequence.MacroVersions[GSE.GetActiveSequenceVersion(v.sequencename)])
           end
         elseif v.action == "openviewer" then
           GSE.GUIShowViewer()

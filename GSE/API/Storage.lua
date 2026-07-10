@@ -10,7 +10,7 @@ local MAX_ACCOUNT_MACROS = MAX_ACCOUNT_MACROS or 120
 
 --- Delete a sequence starting with the macro and then the sequence from the library
 function GSE.DeleteSequence(classid, sequenceName)
-  GSE.DeleteMacroStub(sequenceName)
+  GSE.DeleteMacroStub(sequenceName, classid)
   GSELibrary[classid][sequenceName] = nil
 end
 
@@ -104,11 +104,9 @@ end
 function GSE.OOCAddSequenceToCollection(sequenceName, sequence, classid)
   local confirmationtext = ""
 
-  -- Remove Spaces or commas from SequenceNames and replace with _'s
-  if not GSE.isEmpty(sequenceName) then
-    sequenceName = string.gsub(sequenceName, " ", "_")
-    sequenceName = string.gsub(sequenceName, ",", "_")
-  else
+  -- GSE-CoA: keep the user-facing sequence name exactly as entered.
+  -- WoW-safe secure button names are stored separately in InternalMacroName.
+  if GSE.isEmpty(sequenceName) then
     return false, L["No Sequence Name"]
   end
 
@@ -125,6 +123,7 @@ function GSE.OOCAddSequenceToCollection(sequenceName, sequence, classid)
   if GSE.isEmpty(GSELibrary[classid]) then
     GSELibrary[classid] = {}
   end
+  GSE.GetOrCreateInternalMacroName(sequenceName, sequence, classid)
   if not GSE.isEmpty(GSELibrary[classid][sequenceName]) then
       found = true
   end
@@ -170,7 +169,7 @@ function GSE.OOCAddSequenceToCollection(sequenceName, sequence, classid)
     GSE.Print(GSEOptions.EmphasisColour .. sequenceName .. "|r" .. L[" was imported with the following errors."] .. " " .. confirmationtext, GNOME)
   end
   if classid == GSE.GetCurrentClassID() or classid == 0 then
-     GSE.UpdateSequence(sequenceName, sequence.MacroVersions[sequence.Default])
+     GSE.UpdateSequence(GSE.GetInternalMacroName(sequenceName, sequence, classid), sequence.MacroVersions[sequence.Default])
   end
   --- Added by me
   GSELibrary[classid][sequenceName].ManualIntervention = false
@@ -221,6 +220,8 @@ end
 
 --- Add a macro for a sequence amd register it in the list of known sequences
 function GSE.CreateMacroIcon(sequenceName, icon, forceglobalstub)
+  local sequence, classid = GSE.GetSequenceForExecution(sequenceName)
+  local internalMacroName = GSE.GetInternalMacroName(sequenceName, sequence, classid)
   local sequenceIndex = GetMacroIndexByName(sequenceName)
   local numAccountMacros, numCharacterMacros = GetNumMacros()
   if sequenceIndex > 0 then
@@ -237,7 +238,7 @@ function GSE.CreateMacroIcon(sequenceName, icon, forceglobalstub)
   end
 
   local macroIcon = tonumber(icon) or 1
-  local macroBody = GSE.CreateMacroString(sequenceName)
+  local macroBody = GSE.CreateMacroString(internalMacroName)
   local perCharacter = (forceglobalstub and false or GSE.SetMacroLocation())
   local ok, sequenceid = pcall(CreateMacro, sequenceName, macroIcon, macroBody, perCharacter)
   if not ok then
@@ -318,7 +319,7 @@ function GSE.ReloadSequences()
   if GSELibrary and GSELibrary[classid] then
     for name, sequence in pairs(GSELibrary[classid]) do
       if not GSE.isEmpty(sequence) and not GSE.isEmpty(sequence.MacroVersions) then
-        GSE.UpdateSequence(name, sequence.MacroVersions[GSE.GetActiveSequenceVersion(name)])
+        GSE.UpdateSequence(GSE.GetInternalMacroName(name, sequence, classid), sequence.MacroVersions[GSE.GetActiveSequenceVersion(name)])
       end
     end
   end
@@ -326,7 +327,7 @@ function GSE.ReloadSequences()
     if not GSE.isEmpty(GSELibrary[0]) then
       for name, sequence in pairs(GSELibrary[0]) do
         if not GSE.isEmpty(sequence) and not GSE.isEmpty(sequence.MacroVersions) then
-          GSE.UpdateSequence(name, sequence.MacroVersions[GSE.GetActiveSequenceVersion(name)])
+          GSE.UpdateSequence(GSE.GetInternalMacroName(name, sequence, 0), sequence.MacroVersions[GSE.GetActiveSequenceVersion(name)])
         end
       end
     end
@@ -858,12 +859,12 @@ function GSE.UpdateMacroString()
     local mname, mtexture, mbody = GetMacroInfo(macid)
     if not GSE.isEmpty(mname) then
       if GSELibrary[GSE.GetCurrentClassID()] and not GSE.isEmpty(GSELibrary[GSE.GetCurrentClassID()][mname]) then
-        EditMacro(macid, nil, nil,  GSE.CreateMacroString(mname))
+        EditMacro(macid, nil, nil,  GSE.CreateMacroString(GSE.GetInternalMacroName(mname, GSELibrary[GSE.GetCurrentClassID()][mname], GSE.GetCurrentClassID())))
         GSE.PrintDebugMessage(string.format("Updating macro %s to %s", mname, GSE.CreateMacroString(mname)))
       end
       if not GSE.isEmpty(GSELibrary[0]) then
         if not GSE.isEmpty(GSELibrary[0][mname]) then
-          EditMacro(macid, nil, nil,  GSE.CreateMacroString(mname))
+          EditMacro(macid, nil, nil,  GSE.CreateMacroString(GSE.GetInternalMacroName(mname, GSELibrary[0][mname], 0)))
           GSE.PrintDebugMessage(string.format("Updating macro %s to %s", mname, GSE.CreateMacroString(mname)))
         end
       end
@@ -877,32 +878,36 @@ end
 function GSE.GetSequenceForExecution(SequenceName)
   local classid = GSE.GetCurrentClassID()
   if GSELibrary and GSELibrary[classid] and GSELibrary[classid][SequenceName] then
-    return GSELibrary[classid][SequenceName], classid
+    return GSELibrary[classid][SequenceName], classid, SequenceName
   end
   if GSELibrary and GSELibrary[0] and GSELibrary[0][SequenceName] then
-    return GSELibrary[0][SequenceName], 0
+    return GSELibrary[0][SequenceName], 0, SequenceName
   end
-  return nil, classid
+  local sequence, foundClass, foundName = GSE.FindSequenceByInternalMacroName(SequenceName)
+  if sequence then
+    return sequence, foundClass, foundName
+  end
+  return nil, classid, SequenceName
 end
 
 --- CoA/WotLK helper: make sure the hidden secure GSE button exists and is loaded.
 function GSE.EnsureSequenceExecutable(SequenceName)
-  local sequence, classid = GSE.GetSequenceForExecution(SequenceName)
+  local sequence, classid, storageName = GSE.GetSequenceForExecution(SequenceName)
   if GSE.isEmpty(sequence) or GSE.isEmpty(sequence.MacroVersions) then
     GSE.PrintDebugMessage("GSE-CoA: Cannot load secure button for " .. tostring(SequenceName) .. " because sequence is missing.", "Storage")
     return false
   end
-  local version = GSE.GetActiveSequenceVersion(SequenceName)
+  local version = GSE.GetActiveSequenceVersion(storageName or SequenceName)
   local macroversion = sequence.MacroVersions[version]
   if GSE.isEmpty(macroversion) then
     GSE.PrintDebugMessage("GSE-CoA: Cannot load secure button for " .. tostring(SequenceName) .. " because active macro version is missing.", "Storage")
     return false
   end
   if InCombatLockdown and InCombatLockdown() then
-    GSE.UpdateSequence(SequenceName, macroversion)
+    GSE.UpdateSequence(GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid), macroversion)
     return true
   end
-  local ok, err = pcall(GSE.OOCUpdateSequence, SequenceName, macroversion)
+  local ok, err = pcall(GSE.OOCUpdateSequence, GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid), macroversion)
   if not ok then
     GSE.Print("GSE-CoA: Failed to load secure button for " .. tostring(SequenceName) .. ": " .. tostring(err), "Storage")
     return false
@@ -922,7 +927,7 @@ end
 --- Check if a macro has been created and if the create flag is true and the macro hasnt been created then create it.
 function GSE.OOCCheckMacroCreated(SequenceName, create)
   local found = false
-  local sequence, classid = GSE.GetSequenceForExecution(SequenceName)
+  local sequence, classid, storageName = GSE.GetSequenceForExecution(SequenceName)
   if GSE.isEmpty(sequence) then
     GSE.Print("GSE-CoA: Could not find sequence " .. tostring(SequenceName) .. " in class or global storage.", "Storage")
     return false
@@ -932,7 +937,7 @@ function GSE.OOCCheckMacroCreated(SequenceName, create)
   if macroIndex and macroIndex ~= 0 then
     found = true
     if create then
-      local ok, err = pcall(EditMacro, macroIndex, nil, nil, GSE.CreateMacroString(SequenceName))
+      local ok, err = pcall(EditMacro, macroIndex, nil, nil, GSE.CreateMacroString(GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid)))
       if not ok then
         GSE.Print("GSE-CoA: EditMacro failed for " .. tostring(SequenceName) .. ": " .. tostring(err), "Storage")
       end
@@ -948,21 +953,42 @@ function GSE.OOCCheckMacroCreated(SequenceName, create)
   -- The visible Blizzard macro only clicks a hidden secure GSE button.  Ensure
   -- that hidden button exists immediately after creating/updating the macro.
   if found then
-    GSE.EnsureSequenceExecutable(SequenceName)
+    GSE.EnsureSequenceExecutable(storageName or SequenceName)
   end
   return found
 end
 
 --- This removes a macro Stub.
-function GSE.DeleteMacroStub(sequenceName)
+function GSE.DeleteMacroStub(sequenceName, classid)
+  local sequence, foundClass, storageName = GSE.GetSequenceForExecution(sequenceName)
+
+  -- If a classid was explicitly supplied, prefer that lookup.  GUI calls usually
+  -- do not pass classid, so fall back to GetSequenceForExecution above.
+  if GSELibrary and classid and GSELibrary[classid] and GSELibrary[classid][sequenceName] then
+    sequence = GSELibrary[classid][sequenceName]
+    foundClass = classid
+    storageName = sequenceName
+  end
+
+  local internalMacroName = GSE.GetInternalMacroName(storageName or sequenceName, sequence, foundClass or classid)
   local mname, _, mbody = GetMacroInfo(sequenceName)
-  if mname == sequenceName and mbody then
+
+  -- Older test builds may have created the visible macro under the internal name.
+  -- Try that as a fallback, but normally the visible macro should use sequenceName
+  -- and its body should /click the internal secure button.
+  local deleteName = sequenceName
+  if GSE.isEmpty(mname) then
+    mname, _, mbody = GetMacroInfo(internalMacroName)
+    deleteName = internalMacroName
+  end
+
+  if not GSE.isEmpty(mname) and mbody then
     local trimmedmbody = mbody:gsub("[^%w ]", "")
-    local compar = GSE.CreateMacroString(mname)
+    local compar = GSE.CreateMacroString(internalMacroName)
     local trimmedcompar = compar:gsub("[^%w ]", "")
     if string.lower(trimmedmbody) == string.lower(trimmedcompar) then
       GSE.Print(L[" Deleted Orphaned Macro "] .. mname, GNOME)
-      DeleteMacro(sequenceName)
+      DeleteMacro(deleteName)
     end
   end
 end
@@ -1127,10 +1153,12 @@ function GSE.CoADumpSequence(SequenceName)
     GSE.Print("Usage: /gse coaseq SequenceName", "CoA")
     return
   end
-  local sequence, classid = GSE.GetSequenceForExecution(SequenceName)
-  local button = _G[SequenceName]
+  local sequence, classid, storageName = GSE.GetSequenceForExecution(SequenceName)
+  local internalName = GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid)
+  local button = _G[internalName]
   GSE.Print("===== GSE-CoA Sequence Diagnostics =====", "CoA")
   GSE.Print("Name: " .. tostring(SequenceName), "CoA")
+  GSE.Print("InternalMacroName: " .. tostring(internalName), "CoA")
   GSE.Print("ClassKey: " .. tostring(classid), "CoA")
   GSE.Print("SequenceFound: " .. tostring(sequence ~= nil), "CoA")
   if sequence and sequence.MacroVersions then

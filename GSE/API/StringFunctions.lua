@@ -133,6 +133,54 @@ function GSE.SplitCastSequence(str)
   return tab
 end
 
+--- Split a macro option list on semicolons while respecting conditional blocks.
+function GSE.SplitMacroClauses(str)
+  local tab = {}
+  local slen = string.len(str or "")
+  local modblock = false
+  local start = 1
+  for i=1,slen,1 do
+    local ch = string.sub(str, i, i)
+    if ch == "[" then
+      modblock = true
+    elseif ch == "]" then
+      modblock = false
+    elseif ch == ";" and not modblock then
+      table.insert(tab, string.sub(str, start, i-1))
+      start = i+1
+    end
+  end
+  table.insert(tab, string.sub(str, start))
+  return tab
+end
+
+--- Parse a /castsequence clause into preserved Blizzard options and spell list.
+-- CastSequence options such as reset=target/5 are macro syntax, not spell names.
+-- Keeping them separate prevents the translator/editor from corrupting valid
+-- Blizzard-style castsequence lines.
+function GSE.ParseCastSequenceClause(str)
+  local clause = string.match(str or "", "^%s*(.-)%s*$") or ""
+  local prefix = ""
+
+  -- Preserve one or more leading macro conditional blocks.
+  while string.sub(clause, 1, 1) == "[" do
+    local close = string.find(clause, "]", 1, true)
+    if not close then break end
+    prefix = prefix .. string.sub(clause, 1, close) .. " "
+    clause = string.match(string.sub(clause, close + 1), "^%s*(.-)%s*$") or ""
+  end
+
+  -- Preserve reset=... before the first spell.  Blizzard accepts compound
+  -- reset values like target/5 and target/combat/5 as a single option token.
+  local resetopt, rest = string.match(clause, "^(reset=[^%s]+)%s+(.+)$")
+  if resetopt then
+    prefix = prefix .. resetopt .. " "
+    clause = rest
+  end
+
+  return prefix, clause
+end
+
 
 --- Split a string into an array based on the deliminter specified.
 -- Not currently used
@@ -203,8 +251,14 @@ end
 
 function GSE.formatModVersion(vers)
   vers = tostring(vers)
-  vers = string.sub(vers, 1, 1) .. "." .. string.sub(vers, 2, 2) .. "." .. string.sub(vers, 3)
-  return vers
+
+  -- CoA releases use an already formatted major.minor version (for example 2.1).
+  -- Preserve upstream numeric build versions by formatting them only when no dot exists.
+  if string.find(vers, ".", 1, true) then
+    return vers
+  end
+
+  return string.sub(vers, 1, 1) .. "." .. string.sub(vers, 2, 2) .. "." .. string.sub(vers, 3)
 end
 
 --- This function removes any hidden characters from a string.

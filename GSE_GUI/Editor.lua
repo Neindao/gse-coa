@@ -175,7 +175,14 @@ function GSE.GUIEditorPerformLayout(frame)
   nameeditbox:SetWidth(250)
   nameeditbox:SetCallback("OnTextChanged", function() editframe.SequenceName = nameeditbox:GetText(); end)
   nameeditbox:DisableButton( true)
-  nameeditbox:SetText(editframe.SequenceName)
+  -- GSE-CoA: ensure the editor name field is populated from the user-facing sequence name.
+  -- InternalMacroName must never replace the visible SequenceName.
+  local displaySequenceName = editframe.SequenceName
+  if GSE.isEmpty(displaySequenceName) and editframe.Sequence and not GSE.isEmpty(editframe.Sequence.Name) then
+    displaySequenceName = editframe.Sequence.Name
+    editframe.SequenceName = displaySequenceName
+  end
+  nameeditbox:SetText(displaySequenceName or "")
   editframe.nameeditbox = nameeditbox
   headerGroup:AddChild(nameeditbox)
 
@@ -241,8 +248,19 @@ function GSE.GUIEditorPerformLayout(frame)
   savebutton:SetWidth(150)
   savebutton:SetCallback("OnClick", function()
     editframe.Sequence.ManualIntervention = true
-    nameeditbox:SetText(nameeditbox:GetText())
-    editframe.SequenceName = nameeditbox:GetText()
+    local saveName = nameeditbox:GetText()
+    if GSE.isEmpty(saveName) and editframe.Sequence and not GSE.isEmpty(editframe.Sequence.Name) then
+      saveName = editframe.Sequence.Name
+      nameeditbox:SetText(saveName)
+    end
+    if GSE.isEmpty(saveName) and not GSE.isEmpty(editframe.SequenceName) then
+      saveName = editframe.SequenceName
+      nameeditbox:SetText(saveName)
+    end
+    editframe.SequenceName = saveName
+    if editframe.Sequence then
+      editframe.Sequence.Name = saveName
+    end
     GSE.GUIUpdateSequenceDefinition(editframe.ClassID, editframe.SequenceName, editframe.Sequence)
     editframe.save = true
   end)
@@ -829,7 +847,27 @@ end
 function GSE.GUISelectEditorTab(container, event, group)
   container:ReleaseChildren()
   editframe.SelectedTab = group
-  editframe.nameeditbox:SetText(GSE.GUIEditFrame.SequenceName)
+
+  -- GSE-CoA: keep the visible sequence name independent from the internal macro id.
+  -- Some sequences created during migration may not have SequenceName populated on
+  -- the frame even though the storage key / sequence.Name is valid.
+  local displaySequenceName = GSE.GUIEditFrame.SequenceName
+  if GSE.isEmpty(displaySequenceName) and editframe.Sequence and not GSE.isEmpty(editframe.Sequence.Name) then
+    displaySequenceName = editframe.Sequence.Name
+  end
+  if GSE.isEmpty(displaySequenceName) and editframe.Sequence and not GSE.isEmpty(editframe.Sequence.InternalMacroName) then
+    -- Last resort only: better to show something than save an empty sequence name.
+    displaySequenceName = editframe.Sequence.InternalMacroName
+  end
+  if not GSE.isEmpty(displaySequenceName) then
+    GSE.GUIEditFrame.SequenceName = displaySequenceName
+    editframe.SequenceName = displaySequenceName
+    if editframe.Sequence then
+      editframe.Sequence.Name = displaySequenceName
+    end
+  end
+
+  editframe.nameeditbox:SetText(displaySequenceName or "")
   editframe.iconpicker:SetImage(GSE.GetMacroIcon(editframe.ClassID, editframe.SequenceName))
   if group == "config" then
     GSE:GUIDrawMetadataEditor(container)

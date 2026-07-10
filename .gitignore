@@ -1,0 +1,29 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+*~
+
+# Release packages
+*.zip
+*.rar
+*.7z
+
+# WoW local folders
+Cache/
+Logs/
+WTF/
+Screenshots/

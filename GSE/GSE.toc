@@ -2,7 +2,7 @@
 ## Title: GSE
 ## Notes: Allows you to execute a sequence of macros without stopping on unusable spells.
 ## Author: TimothyLuke, Gummed, cerberus
-## Version: 2205-wotlk
+## Version: 2.1
 ## SavedVariables: GSEOptions GSELibrary
 ## OptionalDeps: WeakAuras
 
@@ -69,6 +69,8 @@ API\StringFunctions.lua
 API\CharacterFunctions.lua
 SampleMacros.lua
 SampleMacros_Documented.lua
+API\SpellNormalizer.lua
+API\InternalMacroID.lua
 API\Storage.lua
 API\Translator.lua
 API\Plugins.lua

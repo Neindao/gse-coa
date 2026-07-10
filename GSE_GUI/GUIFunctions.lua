@@ -59,6 +59,7 @@ function GSE.GUILoadEditor(key, incomingframe, recordedstring)
         }
       },
     }
+    sequence.Name = sequenceName
     if not GSE.isEmpty(recordedstring) then
       sequence.MacroVersions[1][1] = nil
       sequence.MacroVersions[1] = GSE.SplitMeIntolines(recordedstring)
@@ -68,8 +69,20 @@ function GSE.GUILoadEditor(key, incomingframe, recordedstring)
     classid = GSE.ResolveClassKey(elements[1])
     sequenceName = elements[2]
 	
-    sequence = GSE.CloneSequence(GSELibrary[classid][sequenceName], true)
-	GSE.isNewFirstTimeCreated=false
+    local sourceSequence = GSELibrary[classid] and GSELibrary[classid][sequenceName]
+    if GSE.isEmpty(sourceSequence) then
+      GSE.Print('GSE-CoA: Could not open sequence ' .. tostring(sequenceName) .. ' because it was not found in storage.', 'GUI')
+      return
+    end
+    sequence = GSE.CloneSequence(sourceSequence, true)
+    -- GSE-CoA: preserve user-facing sequence name separately from the internal macro id.
+    if GSE.isEmpty(sequence.Name) then
+      sequence.Name = sequenceName
+    end
+    if GSE.isEmpty(sequenceName) and not GSE.isEmpty(sequence.Name) then
+      sequenceName = sequence.Name
+    end
+		GSE.isNewFirstTimeCreated=false
   end
   GSE.GUIEditFrame.SequenceName = sequenceName
   GSE.GUIEditFrame.Sequence = sequence
@@ -83,6 +96,22 @@ function GSE.GUILoadEditor(key, incomingframe, recordedstring)
   GSE.GUIEditFrame.Party = sequence.Party or sequence.Default
   GSE.GUIEditorPerformLayout(GSE.GUIEditFrame)
   GSE.GUIEditFrame.ContentContainer:SelectTab("config")
+
+  -- GSE-CoA: after the editor layout/tab redraws, force the visible
+  -- name editbox to show the user-facing sequence name.  Some redraw paths
+  -- reset the AceGUI editbox text even though GSE.GUIEditFrame.SequenceName
+  -- is valid, which makes the header appear blank while saving still works.
+  if GSE.GUIEditFrame.nameeditbox then
+    local displaySequenceName = GSE.GUIEditFrame.SequenceName
+    if GSE.isEmpty(displaySequenceName) and GSE.GUIEditFrame.Sequence and not GSE.isEmpty(GSE.GUIEditFrame.Sequence.Name) then
+      displaySequenceName = GSE.GUIEditFrame.Sequence.Name
+    end
+    if not GSE.isEmpty(displaySequenceName) then
+      GSE.GUIEditFrame.SequenceName = displaySequenceName
+      GSE.GUIEditFrame.nameeditbox:SetText(displaySequenceName)
+    end
+  end
+
   incomingframe:Hide()
   if not InCombatLockdown() then
 	myUpdateFix()
@@ -166,6 +195,9 @@ function GSE.GUIUpdateSequenceDefinition(classid, SequenceName, sequence)
   for k,v in ipairs(sequence.MacroVersions) do
     sequence.MacroVersions[k] = GSE.TranslateSequenceFromTo(v, GetLocale(), "enUS", SequenceName)
     sequence.MacroVersions[k] = GSE.UnEscapeSequence(sequence.MacroVersions[k])
+
+    -- GSE-CoA: normalize spellbook-generated spell tokens before saving.
+    sequence.MacroVersions[k] = GSE.NormalizeExecutionMacroVersion(sequence.MacroVersions[k])
   end
 
   if not GSE.isEmpty(SequenceName) then
@@ -176,6 +208,8 @@ function GSE.GUIUpdateSequenceDefinition(classid, SequenceName, sequence)
       local vals = {}
       vals.action = "Replace"
       vals.sequencename = SequenceName
+      sequence.Name = SequenceName
+      GSE.GetOrCreateInternalMacroName(SequenceName, sequence, classid)
       vals.sequence = sequence
       vals.classid = classid
       table.insert(GSE.OOCQueue, vals)

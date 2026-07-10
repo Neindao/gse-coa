@@ -131,40 +131,65 @@ function GSE.TranslateString(instring, fromLocale, toLocale, cleanNewLines)
           if foundspell then
             output = output ..GSEOptions.KEYWORD .. returnval .. Statics.StringReset
           else
+            -- GSE-CoA: CoA/custom-class spells may not exist in GSE's Blizzard
+            -- translation tables, but they are still valid executable spell names.
+            -- Keep the parsed conditional coloring and color the remaining spell
+            -- token instead of dropping back to plain white text.
             GSE.PrintDebugMessage("Did not find : " .. etc .. " in " .. fromLocale, GNOME)
-            output = output  .. etc
+            output = output .. returnval
           end
         -- check for cast Sequences
         elseif string.lower(cmd) == "castsequence" then
           GSE.PrintDebugMessage("attempting to split : " .. etc, GNOME)
-          for x,y in ipairs(GSE.split(etc,";")) do
-            for _, w in ipairs(GSE.SplitCastSequence(y,",")) do
-              --look for conditionals at the startattack
+          local clauseOutput = {}
+          for _, clause in ipairs(GSE.SplitMacroClauses(etc)) do
+            local castPrefix, spellList = GSE.ParseCastSequenceClause(clause)
+            local spellOutput = {}
+            for spellIndex, w in ipairs(GSE.SplitCastSequence(spellList,",")) do
               local conditionals, mods, uetc = GSE.GetConditionalsFromString(w)
+              local translated = ""
               if conditionals then
-                output = output ..GSEOptions.STANDARDFUNCS .. mods .. Statics.StringReset .. " "
+                translated = translated .. GSEOptions.STANDARDFUNCS .. mods .. Statics.StringReset .. " "
               end
 
               if not cleanNewLines then
-                w = string.match(uetc, "^%s*(.-)%s*$")
+                uetc = string.match(uetc, "^%s*(.-)%s*$")
               end
               if string.sub(uetc, 1, 1) == "!" then
                 uetc = string.sub(uetc, 2)
-                output = output .. "!"
+                translated = translated .. "!"
               end
+
               local foundspell, returnval = GSE.TranslateSpell(uetc, fromLocale, toLocale, (cleanNewLines and cleanNewLines or false))
-              output = output ..  GSEOptions.KEYWORD .. returnval .. Statics.StringReset .. ", "
+              translated = translated .. GSEOptions.KEYWORD .. returnval .. Statics.StringReset
+
+              if spellIndex == 1 and castPrefix ~= "" then
+                -- CastSequence options are executable macro syntax, not spell
+                -- text.  Color each token independently so leading conditions
+                -- and reset= clauses remain readable without changing the
+                -- preserved text that is sent back to the client.
+                local highlightedPrefix = ""
+                local remainingPrefix = castPrefix
+                while string.sub(remainingPrefix, 1, 1) == "[" do
+                  local close = string.find(remainingPrefix, "]", 1, true)
+                  if not close then break end
+                  local conditional = string.sub(remainingPrefix, 1, close)
+                  highlightedPrefix = highlightedPrefix .. GSEOptions.STANDARDFUNCS .. conditional .. Statics.StringReset .. " "
+                  remainingPrefix = string.match(string.sub(remainingPrefix, close + 1), "^%s*(.-)%s*$") or ""
+                end
+                local resetOption = string.match(remainingPrefix, "^(reset=[^%s]+)")
+                if resetOption then
+                  highlightedPrefix = highlightedPrefix .. GSEOptions.COMMENT .. resetOption .. Statics.StringReset .. " "
+                elseif remainingPrefix ~= "" then
+                  highlightedPrefix = highlightedPrefix .. remainingPrefix
+                end
+                translated = highlightedPrefix .. translated
+              end
+              table.insert(spellOutput, translated)
             end
-            output = output .. ";"
+            table.insert(clauseOutput, table.concat(spellOutput, ", "))
           end
-          output = string.sub(output, 1, string.len(output) -1)
-          local resetleft = string.find(output, ", , ")
-          if not GSE.isEmpty(resetleft) then
-            output = string.sub(output, 1, resetleft -1)
-          end
-          if string.sub(output, string.len(output)-1) == ", " then
-            output = string.sub(output, 1, string.len(output)-2)
-          end
+          output = output .. table.concat(clauseOutput, "; ")
 
         else
           -- pass it through
@@ -246,7 +271,9 @@ function GSE.TranslateSpell(str, fromLocale, toLocale, cleanNewLines)
         found = true
       else
         GSE.PrintDebugMessage("Did not find : " .. etc .. " in " .. fromLocale, GNOME)
-        output = output  .. GSEOptions.UNKNOWN .. etc .. Statics.StringReset
+        -- GSE-CoA: Treat unknown spell names as spell tokens for editor coloring.
+        -- CoA custom spells are often absent from GSE's stock translation tables.
+        output = output  .. GSEOptions.KEYWORD .. etc .. Statics.StringReset
         if GSE.isEmpty(GSEOptions.UnfoundSpells) then
           GSEOptions.UnfoundSpells = {}
         end
