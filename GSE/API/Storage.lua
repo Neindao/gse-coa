@@ -218,6 +218,136 @@ function GSE.GetActiveSequenceVersion(sequenceName)
 end
 
 
+--- Convert stored sequence icon values into the numeric icon index required
+--- by the WoW 3.3.5 macro API.  CoA spell lookups commonly return a full
+--- texture path, while CreateMacro/EditMacro only accept an icon-list index.
+function GSE.NormalizeMacroIcon(icon)
+  local numericIcon = tonumber(icon)
+  if numericIcon and numericIcon > 0 then
+    return numericIcon, true
+  end
+
+  if GSE.isEmpty(icon) then
+    return nil, false
+  end
+
+  local requestedIcon = tostring(icon)
+  local requestedName = string.lower(string.match(requestedIcon, "([^\/]+)$") or requestedIcon)
+  local macroIcons = {}
+
+  if type(GetMacroIcons) == "function" then
+    GetMacroIcons(macroIcons)
+    for index, macroIcon in ipairs(macroIcons) do
+      local iconName = string.lower(string.match(tostring(macroIcon), "([^\/]+)$") or tostring(macroIcon))
+      if iconName == requestedName then
+        return index, true
+      end
+    end
+  end
+
+  return nil, false
+end
+
+--- Resolve a numeric macro icon index for the active sequence.
+---
+--- CoA's macro API requires an icon-list index.  Some CoA spell textures are
+--- valid for action buttons but are absent from the Blizzard macro icon list.
+--- In that case, keep scanning the sequence and use the first executable
+--- spell/item whose texture can actually be represented by a Blizzard macro.
+function GSE.GetSequenceMacroIcon(sequenceName, sequence)
+  if GSE.isEmpty(sequence) then
+    return nil
+  end
+
+  if not GSE.isEmpty(sequence.Icon) then
+    local explicitIcon = GSE.NormalizeMacroIcon(sequence.Icon)
+    if not GSE.isEmpty(explicitIcon) then
+      return explicitIcon
+    end
+  end
+
+  local version = GSE.GetActiveSequenceVersion(sequenceName)
+  local macroversion = sequence.MacroVersions and (sequence.MacroVersions[version] or sequence.MacroVersions[sequence.Default or 1] or sequence.MacroVersions[1])
+  if GSE.isEmpty(macroversion) then
+    return nil
+  end
+
+  local function extractAction(line)
+    if type(line) ~= "string" then
+      return nil
+    end
+
+    local command, arguments = string.match(line, "^%s*/(%a+)%s+(.+)$")
+    if GSE.isEmpty(command) or GSE.isEmpty(arguments) then
+      return nil
+    end
+
+    command = string.lower(command)
+    if command ~= "cast" and command ~= "castsequence" and command ~= "use" then
+      return nil
+    end
+
+    while string.match(arguments, "^%s*%[") do
+      local _, conditionEnd = string.find(arguments, "^%s*%b[]%s*")
+      if not conditionEnd then
+        break
+      end
+      arguments = string.sub(arguments, conditionEnd + 1)
+    end
+
+    if command == "castsequence" then
+      arguments = string.gsub(arguments, "^%s*reset=[^%s]+%s*", "", 1)
+    end
+
+    arguments = string.match(arguments, "^%s*([^;]+)") or arguments
+    arguments = string.match(arguments, "^%s*([^,]+)") or arguments
+    arguments = string.gsub(arguments, "^%s+", "")
+    arguments = string.gsub(arguments, "%s+$", "")
+
+    if arguments == "" then
+      return nil
+    end
+    return arguments
+  end
+
+  local sections = { macroversion.KeyPress, macroversion, macroversion.KeyRelease }
+  for _, section in ipairs(sections) do
+    if type(section) == "table" then
+      for _, line in ipairs(section) do
+        local action = extractAction(line)
+        if not GSE.isEmpty(action) then
+          local texture
+          if type(GetSpellTexture) == "function" then
+            texture = GetSpellTexture(action)
+          end
+          if GSE.isEmpty(texture) and type(GetItemIcon) == "function" then
+            texture = GetItemIcon(action)
+          end
+          if not GSE.isEmpty(texture) then
+            local macroIcon = GSE.NormalizeMacroIcon(texture)
+            if not GSE.isEmpty(macroIcon) then
+              return macroIcon
+            end
+          end
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
+--- Return the preferred texture for editor/UI callers.  Macro creation should
+--- use GetSequenceMacroIcon because CoA requires a numeric icon-list index.
+function GSE.GetSequenceIconTexture(sequenceName, sequence)
+  if GSE.isEmpty(sequence) then
+    return nil
+  end
+  if not GSE.isEmpty(sequence.Icon) then
+    return sequence.Icon
+  end
+  return nil
+end
 --- Add a macro for a sequence amd register it in the list of known sequences
 function GSE.CreateMacroIcon(sequenceName, icon, forceglobalstub)
   local sequence, classid = GSE.GetSequenceForExecution(sequenceName)
@@ -237,7 +367,10 @@ function GSE.CreateMacroIcon(sequenceName, icon, forceglobalstub)
     return false, "account macro limit"
   end
 
-  local macroIcon = tonumber(icon) or 1
+  local macroIcon = tonumber(icon) or GSE.NormalizeMacroIcon(icon)
+  if GSE.isEmpty(macroIcon) then
+    macroIcon = 1
+  end
   local macroBody = GSE.CreateMacroString(internalMacroName)
   local perCharacter = (forceglobalstub and false or GSE.SetMacroLocation())
   local ok, sequenceid = pcall(CreateMacro, sequenceName, macroIcon, macroBody, perCharacter)
@@ -937,15 +1070,18 @@ function GSE.OOCCheckMacroCreated(SequenceName, create)
   if macroIndex and macroIndex ~= 0 then
     found = true
     if create then
-      local ok, err = pcall(EditMacro, macroIndex, nil, nil, GSE.CreateMacroString(GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid)))
+      local macroIcon = GSE.GetSequenceMacroIcon(storageName or SequenceName, sequence)
+      -- Passing nil preserves an existing icon if the client cannot map the
+      -- requested texture to a numeric entry in its macro icon list.
+      local ok, err = pcall(EditMacro, macroIndex, nil, macroIcon, GSE.CreateMacroString(GSE.GetInternalMacroName(storageName or SequenceName, sequence, classid)))
       if not ok then
         GSE.Print("GSE-CoA: EditMacro failed for " .. tostring(SequenceName) .. ": " .. tostring(err), "Storage")
       end
     end
   else
     if create then
-      local icon = (GSE.isEmpty(sequence.Icon) and Statics.QuestionMark or sequence.Icon)
-      local ok = GSE.CreateMacroIcon(SequenceName, icon)
+      local macroIcon = GSE.GetSequenceMacroIcon(storageName or SequenceName, sequence)
+      local ok = GSE.CreateMacroIcon(SequenceName, macroIcon)
       found = ok and true or false
     end
   end
@@ -1215,6 +1351,16 @@ function GSE.UpdateIcon(self, reset)
     return
   end
   
+  -- The secure execution button may use an internal name that differs from
+  -- the user-facing Blizzard macro name.  SetMacroSpell/SetMacroItem must
+  -- target the visible macro, otherwise dynamic icons only work for legacy
+  -- sequences whose internal and display names happen to be identical.
+  local macroTarget = gsebutton
+  local _, _, visibleSequenceName = GSE.FindSequenceByInternalMacroName(gsebutton)
+  if not GSE.isEmpty(visibleSequenceName) and GetMacroIndexByName(visibleSequenceName) > 0 then
+    macroTarget = visibleSequenceName
+  end
+
   local commandline, foundSpell, notSpell = executionseq[step], false, ''
   for cmd, etc in gmatch(commandline or '', '/(%w+)%s+([^\n]+)') do
     if Statics.CastCmds[strlower(cmd)] or strlower(cmd) == "castsequence" then
@@ -1224,7 +1370,7 @@ function GSE.UpdateIcon(self, reset)
       end
       if spell then
         if GetSpellInfo(spell) then
-          SetMacroSpell(gsebutton, spell, target)
+          SetMacroSpell(macroTarget, spell, target)
           foundSpell = true
           break
         elseif notSpell == '' then
@@ -1233,7 +1379,7 @@ function GSE.UpdateIcon(self, reset)
       end
     end
   end
-  if not foundSpell then SetMacroItem(gsebutton, notSpell) end
+  if not foundSpell then SetMacroItem(macroTarget, notSpell) end
   if not reset then
     GSE.UsedSequences[gsebutton] = true
   end

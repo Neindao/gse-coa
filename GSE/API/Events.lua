@@ -432,6 +432,80 @@ function GSE:ProcessOOCQueue()
           GSE.OOCUpdateSequence(v.name, v.macroversion)
         elseif v.action == "Save" then
           GSE.OOCAddSequenceToCollection(v.sequencename, v.sequence, v.classid)
+        elseif v.action == "RenameReplace" then
+          if GSE.isEmpty(v.classid) or GSE.isEmpty(v.sequencename) or GSE.isEmpty(v.originalname) then
+            GSE.PrintDebugMessage("RenameReplace action missing classid, old name, or new name", "Events")
+            return
+          end
+
+          if GSE.isEmpty(GSELibrary[v.classid]) then
+            GSELibrary[v.classid] = {}
+          end
+
+          local existing = GSELibrary[v.classid][v.originalname]
+          if GSE.isEmpty(existing) then
+            -- A newly opened editor can queue its generated placeholder save and
+            -- then receive the user's real name before that placeholder has ever
+            -- reached storage.  In that case this is the first real save, not a
+            -- failed rename.  Save directly under the requested name instead of
+            -- rejecting the operation.
+            if not GSE.isEmpty(GSELibrary[v.classid][v.sequencename]) then
+              GSE.Print("GSE-CoA: Could not create " .. tostring(v.sequencename) .. " because that name already exists.", "Storage")
+              return
+            end
+
+            local sequence = v.sequence
+            if GSE.isEmpty(sequence) then
+              GSE.Print("GSE-CoA: Could not save " .. tostring(v.sequencename) .. " because the sequence data is missing.", "Storage")
+              return
+            end
+
+            sequence.Name = v.sequencename
+            GSE.GetOrCreateInternalMacroName(v.sequencename, sequence, v.classid)
+            GSELibrary[v.classid][v.sequencename] = sequence
+
+            if not GSE.isEmpty(sequence.MacroVersions) then
+              GSE.OOCUpdateSequence(GSE.GetInternalMacroName(v.sequencename, sequence, v.classid), sequence.MacroVersions[GSE.GetActiveSequenceVersion(v.sequencename)])
+            end
+
+            if GSE.GUIUpdateSequenceList then
+              GSE.GUIUpdateSequenceList()
+            end
+            return
+          end
+          if v.originalname ~= v.sequencename and not GSE.isEmpty(GSELibrary[v.classid][v.sequencename]) then
+            GSE.Print("GSE-CoA: Could not rename to " .. tostring(v.sequencename) .. " because that name already exists.", "Storage")
+            return
+          end
+
+          local sequence = v.sequence or existing
+          sequence.Name = v.sequencename
+          GSE.GetOrCreateInternalMacroName(v.originalname, sequence, v.classid)
+
+          -- Move the existing record instead of creating a copy.
+          GSELibrary[v.classid][v.sequencename] = sequence
+          if v.originalname ~= v.sequencename then
+            GSELibrary[v.classid][v.originalname] = nil
+          end
+
+          -- Rename the visible Blizzard macro in place so action-bar bindings and
+          -- macro slots are preserved.  The hidden secure button name stays stable.
+          local oldMacroIndex = GetMacroIndexByName(v.originalname)
+          if oldMacroIndex and oldMacroIndex > 0 then
+            local internalName = GSE.GetInternalMacroName(v.sequencename, sequence, v.classid)
+            local ok, err = pcall(EditMacro, oldMacroIndex, v.sequencename, nil, GSE.CreateMacroString(internalName))
+            if not ok then
+              GSE.Print("GSE-CoA: The sequence was renamed, but its macro could not be renamed: " .. tostring(err), "Storage")
+            end
+          end
+
+          if not GSE.isEmpty(sequence.MacroVersions) then
+            GSE.OOCUpdateSequence(GSE.GetInternalMacroName(v.sequencename, sequence, v.classid), sequence.MacroVersions[GSE.GetActiveSequenceVersion(v.sequencename)])
+          end
+
+          if GSE.GUIUpdateSequenceList then
+            GSE.GUIUpdateSequenceList()
+          end
         elseif v.action == "Replace" then
           -- Remove debug messages that spam chat
           if GSE.isEmpty(v.classid) or GSE.isEmpty(v.sequencename) then
@@ -476,7 +550,7 @@ function GSE.prepareTooltipOOCLine(tooltip, OOCEvent, row, oockey)
     tooltip:SetCell(row, 3, OOCEvent.name, "RIGHT", 1)
   elseif OOCEvent.action == "Save" then
     tooltip:SetCell(row, 3, OOCEvent.sequencename, "RIGHT", 1)
-  elseif OOCEvent.action == "Replace" then
+  elseif OOCEvent.action == "Replace" or OOCEvent.action == "RenameReplace" then
     tooltip:SetCell(row, 3, OOCEvent.sequencename, "RIGHT", 1)
   elseif OOCEvent.action == "CheckMacroCreated" then
     tooltip:SetCell(row, 3, OOCEvent.sequencename, "RIGHT", 1)

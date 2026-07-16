@@ -2,7 +2,7 @@
 ## Title: GSE GUI
 ## Notes: GSE GUI
 ## Author: TimothyLuke
-## Version: 2.1
+## Version: 2.2
 ## Dependencies: GSE
 
 

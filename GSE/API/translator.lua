@@ -192,8 +192,17 @@ function GSE.TranslateString(instring, fromLocale, toLocale, cleanNewLines)
           output = output .. table.concat(clauseOutput, "; ")
 
         else
-          -- pass it through
-          output = output .. " " .. etc
+          -- Non-cast macro commands can also accept Blizzard conditionals.
+          -- Highlight a leading conditional block without changing the command text.
+          local conditionals, mods, remainder = GSE.GetConditionalsFromString(etc)
+          if conditionals then
+            output = output .. mods
+            if not GSE.isEmpty(remainder) then
+              output = output .. " " .. remainder
+            end
+          else
+            output = output .. " " .. etc
+          end
         end
       end
     else

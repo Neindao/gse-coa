@@ -667,7 +667,7 @@ function GSE:GUIDrawMacroEditor(container, version)
   spellbox:SetNumLines(8)
   spellbox:DisableButton(true)
   spellbox:SetFullWidth(true)
-  spellbox.editBox:SetScript( "OnLeave",  function() GSE.GUIParseText(KeyPressbox) end)
+  spellbox.editBox:SetScript( "OnLeave",  function() GSE.GUIParseText(spellbox) end)
   if not GSE.isEmpty(editframe.Sequence.MacroVersions[version]) then
     spellbox:SetText(table.concat(editframe.Sequence.MacroVersions[version], "\n"))
   end
@@ -692,7 +692,7 @@ function GSE:GUIDrawMacroEditor(container, version)
   KeyReleasebox:SetNumLines(2)
   KeyReleasebox:DisableButton(true)
   KeyReleasebox:SetWidth((editframe.Width - 210) * 0.48)
-  KeyReleasebox.editBox:SetScript( "OnLeave",  function() GSE.GUIParseText(KeyPressbox) end)
+  KeyReleasebox.editBox:SetScript( "OnLeave",  function() GSE.GUIParseText(KeyReleasebox) end)
   if not GSE.isEmpty(editframe.Sequence.MacroVersions[version].KeyRelease) then
     KeyReleasebox:SetText(table.concat(editframe.Sequence.MacroVersions[version].KeyRelease, "\n"))
   end

@@ -38,8 +38,9 @@ function GSE.GUILoadEditor(key, incomingframe, recordedstring)
   local classid
   local sequenceName
   local sequence
+  local isNewSequence = GSE.isEmpty(key)
   
-  if GSE.isEmpty(key) then
+  if isNewSequence then
     classid = GSE.GetCurrentClassID()
     sequenceName = GSE.getSequenceName()
 	GSE.isNewFirstTimeCreated=true
@@ -85,6 +86,11 @@ function GSE.GUILoadEditor(key, incomingframe, recordedstring)
 		GSE.isNewFirstTimeCreated=false
   end
   GSE.GUIEditFrame.SequenceName = sequenceName
+  -- Track editor state on the frame itself.  The legacy global
+  -- GSE.isNewFirstTimeCreated is changed by editor/layout code, so it cannot
+  -- reliably distinguish an unsaved sequence from an existing one.
+  GSE.GUIEditFrame.IsNewSequence = isNewSequence
+  GSE.GUIEditFrame.OriginalSequenceName = isNewSequence and nil or sequenceName
   GSE.GUIEditFrame.Sequence = sequence
   GSE.GUIEditFrame.ClassID = classid
   GSE.GUIEditFrame.Default = sequence.Default
@@ -206,13 +212,36 @@ function GSE.GUIUpdateSequenceDefinition(classid, SequenceName, sequence)
     end
     if not GSE.isEmpty(SequenceName) then
       local vals = {}
-      vals.action = "Replace"
+      local editorIsNew = GSE.GUIEditFrame and GSE.GUIEditFrame.IsNewSequence
+      local originalName = GSE.GUIEditFrame and GSE.GUIEditFrame.OriginalSequenceName or nil
+      local isRename = not editorIsNew and not GSE.isEmpty(originalName) and originalName ~= SequenceName
+
+      -- A rename must never overwrite another existing sequence.
+      if isRename and GSELibrary[classid] and GSELibrary[classid][SequenceName] then
+        GSE.GUIEditFrame:SetStatusText("A sequence named " .. SequenceName .. " already exists.")
+        GSE.Print("GSE-CoA: Rename cancelled because " .. tostring(SequenceName) .. " already exists.", "GUI")
+        return
+      end
+
+      vals.action = isRename and "RenameReplace" or "Replace"
       vals.sequencename = SequenceName
+      vals.originalname = originalName
       sequence.Name = SequenceName
-      GSE.GetOrCreateInternalMacroName(SequenceName, sequence, classid)
+      -- Preserve the existing InternalMacroName across renames.  This keeps the
+      -- secure button identity stable while only changing the user-facing name.
+      GSE.GetOrCreateInternalMacroName((not GSE.isEmpty(originalName) and originalName) or SequenceName, sequence, classid)
       vals.sequence = sequence
       vals.classid = classid
       table.insert(GSE.OOCQueue, vals)
+
+      if GSE.GUIEditFrame then
+        -- Once the first save has been queued, later saves from this editor
+        -- operate on the user-selected storage name rather than the generated
+        -- placeholder.  The queued Replace action creates the record normally.
+        GSE.GUIEditFrame.OriginalSequenceName = SequenceName
+        GSE.GUIEditFrame.IsNewSequence = false
+        GSE.isNewFirstTimeCreated = false
+      end
       GSE.GUIEditFrame:SetStatusText(string.format(L["Sequence %s saved."], SequenceName))
     end
   end
