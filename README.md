@@ -12,38 +12,39 @@ This is the first official public release under the GSE-CoA versioning system.
 
 ## Features
 
+GSE-CoA is a macro management addon built specifically for **Ascension: Conquest of Azeroth**.
+
+It preserves Blizzard's macro behavior wherever practical while adding the flexibility, reliability, and quality-of-life improvements expected from GSE.
+
 ### Macro Engine
 
-* Advanced macro sequences executed through a single action-bar button
-* Improved Blizzard macro compatibility
-* Multi-condition macro parsing
-* CastSequence support
-* CastSequence reset conditions
-* KeyPress command preservation
-* Improved spell translation
-* Improved spell normalization
-* CastSequence syntax highlighting
+- Execute advanced macro sequences from a single action-bar button
+- Improved Blizzard macro compatibility
+- Reliable CastSequence behavior, including reset conditions
+- Multi-condition macro parsing
+- KeyPress command preservation
+- Improved spell translation and normalization
+- Enhanced syntax highlighting and validation
 
 ### Sequence Editor
 
-* Create, edit, save, and delete sequences
-* Redesigned sequence editor
-* Separate internal sequence IDs and display names
-* Sequence names containing spaces
-* Sequence names containing underscores
-* Create and delete macro icons
-* Improved syntax highlighting
-* Improved sequence-name handling
+- Create, edit, save, and delete sequences
+- Redesigned editor with improved usability
+- Separate internal sequence IDs and display names
+- Support for spaces and underscores in sequence names
+- Create and delete macro icons
+- Improved syntax highlighting
+- Improved sequence-name handling
 
 ### Architecture and Reliability
 
-* Internal sequence ID system
-* Rewritten sequence storage
-* Improved macro lookup
-* Nil sequence protection
-* Improved parser architecture
-* Ascension: Conquest of Azeroth compatibility fixes
-
+- Internal sequence ID system
+- Rewritten sequence storage
+- Improved macro lookup
+- Nil sequence protection
+- Improved parser architecture
+- Compatibility improvements for Ascension: Conquest of Azeroth
+- Designed for long-term maintainability and future expansion
 ## Installation
 
 1. Download the latest release ZIP from the GitHub **Releases** page.
@@ -197,12 +198,12 @@ The earlier internal v7.x numbering has been retired and is not part of the publ
 
 GSE-CoA exists because of the work of the projects and developers that came before it.
 
-* **semlar** — creator of the original GnomeSequencer concept
-* **TimothyLuke** — original author and maintainer of Gnome Sequencer Enhanced
-* **Gummed** — WoW 3.3.5a/WotLK backport
-* **cerberus** — revival and fixes for the WotLK backport
-* **dmjohn0x** — Project Ascension adaptation
-* **GSE-CoA contributors** — Conquest of Azeroth architecture, compatibility, editor, parser, translation, and macro-engine improvements
+* **semlar** â€” creator of the original GnomeSequencer concept
+* **TimothyLuke** â€” original author and maintainer of Gnome Sequencer Enhanced
+* **Gummed** â€” WoW 3.3.5a/WotLK backport
+* **cerberus** â€” revival and fixes for the WotLK backport
+* **dmjohn0x** â€” Project Ascension adaptation
+* **GSE-CoA contributors** â€” Conquest of Azeroth architecture, compatibility, editor, parser, translation, and macro-engine improvements
 
 Related projects:
 
